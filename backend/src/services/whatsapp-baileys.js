@@ -112,6 +112,8 @@ async function initRealSession(gateway) {
     printQRInTerminal: false,
     browser: ['Ubuntu', 'Chrome', '20.0.04'],
     defaultQueryTimeoutMs: undefined,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
   });
 
   sock.ev.on('connection.update', async (update) => {

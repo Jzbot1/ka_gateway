@@ -51,6 +51,10 @@ export default function Gateways() {
     }
   }, [workspaceId, apiUrl]);
 
+  // Keep ref of selected gateway to avoid rebinding socket listeners
+  const selectedGatewayRef = React.useRef(selectedGateway);
+  selectedGatewayRef.current = selectedGateway;
+
   // Listen to Socket.IO events for real-time gateway updates
   useEffect(() => {
     if (!socket) return;
@@ -60,14 +64,14 @@ export default function Gateways() {
       setGateways((prev) => 
         prev.map((g) => g.id === data.gatewayId ? { ...g, status: data.status, phoneNumber: data.phoneNumber || g.phoneNumber } : g)
       );
-      if (selectedGateway?.id === data.gatewayId && data.status === 'CONNECTED') {
+      if (selectedGatewayRef.current?.id === data.gatewayId && data.status === 'CONNECTED') {
         setShowQrModal(false);
       }
     });
 
     socket.on('qr.update', (data) => {
       console.log('Socket update: qr.update', data);
-      if (selectedGateway?.id === data.gatewayId) {
+      if (selectedGatewayRef.current?.id === data.gatewayId) {
         setQrCodeData(data.qr);
       }
     });
@@ -76,7 +80,25 @@ export default function Gateways() {
       socket.off('gateway.status');
       socket.off('qr.update');
     };
-  }, [socket, selectedGateway]);
+  }, [socket]);
+
+  // Poll QR Code as a fallback if Socket.IO events are delayed or lost
+  useEffect(() => {
+    if (!showQrModal || !selectedGateway || qrCodeData || pairingMethod !== 'QR') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await axios.get(`${apiUrl}/gateways/${selectedGateway.id}/qr`);
+        if (response.data && response.data.qr) {
+          setQrCodeData(response.data.qr);
+        }
+      } catch (e) {
+        console.error('Error polling QR fallback:', e);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [showQrModal, selectedGateway, qrCodeData, pairingMethod, apiUrl]);
 
   const handleCreateGateway = async (e) => {
     e.preventDefault();
