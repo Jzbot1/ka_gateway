@@ -52,6 +52,15 @@ async function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    
+    const dbUser = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!dbUser) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    if (dbUser.isBlocked) {
+      return res.status(403).json({ error: 'Your account is blocked / suspended. Contact administration.' });
+    }
+
     req.user = decoded;
     
     // Check if user workspace is specified in header

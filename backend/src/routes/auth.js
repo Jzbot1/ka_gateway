@@ -111,6 +111,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    if (user.isBlocked) {
+      return res.status(403).json({ error: 'Your account is blocked / suspended. Contact administration.' });
+    }
+
     // Default to first workspace owned/joined
     let workspaceId = user.workspaces[0]?.workspaceId || null;
 

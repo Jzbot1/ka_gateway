@@ -19,7 +19,8 @@ import {
   List,
   Layers,
   Settings,
-  Wallet
+  Wallet,
+  X
 } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -149,6 +150,31 @@ export default function AdminPanel() {
       fetchAdminStats();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to update user subscription');
+    }
+  };
+
+  // Admin Toggle Block User Handler
+  const handleToggleBlock = async (userId) => {
+    try {
+      const response = await axios.put(`${apiUrl}/admin/users/${userId}/block`);
+      alert(response.data.message || 'User block status updated.');
+      fetchAdminStats();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to toggle user block status');
+    }
+  };
+
+  // Admin Delete User Handler
+  const handleDeleteUser = async (userId, userName) => {
+    if (!window.confirm(`Are you sure you want to permanently delete user "${userName}"? This will delete all workspaces, campaigns, messages, and linked gateways for this user. This action CANNOT be undone.`)) {
+      return;
+    }
+    try {
+      const response = await axios.delete(`${apiUrl}/admin/users/${userId}`);
+      alert(response.data.message || 'User deleted successfully.');
+      fetchAdminStats();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete user');
     }
   };
 
@@ -711,6 +737,9 @@ export default function AdminPanel() {
                         {u.role === 'ADMIN' && (
                           <span className="text-[7px] px-1 py-0.2 bg-purple-500/15 text-purple-400 border border-purple-500/20 rounded font-black uppercase">Admin</span>
                         )}
+                        {u.isBlocked && (
+                          <span className="text-[7px] px-1 py-0.2 bg-red-500/15 text-red-400 border border-red-500/20 rounded font-black uppercase">Blocked</span>
+                        )}
                       </h4>
                       <p className="text-[10px] text-slate-500">{u.email}</p>
                     </div>
@@ -735,13 +764,36 @@ export default function AdminPanel() {
                       </select>
                     </div>
 
-                    <button
-                      onClick={() => { setSelectedUserForWallet(u); }}
-                      className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-xl border border-slate-750 flex items-center gap-1"
-                    >
-                      <Wallet className="w-3.5 h-3.5" />
-                      Adjust Wallet
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setSelectedUserForWallet(u); }}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-xl border border-slate-750 flex items-center gap-1"
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                        Adjust Wallet
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleBlock(u.id)}
+                        disabled={u.role === 'ADMIN' && user.id !== u.id}
+                        className={`px-3 py-1.5 text-[10px] font-bold rounded-xl border transition ${
+                          u.isBlocked
+                            ? 'bg-emerald-600/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-600/20'
+                            : 'bg-amber-600/10 text-amber-400 border-amber-500/20 hover:bg-amber-600/20'
+                        }`}
+                      >
+                        {u.isBlocked ? 'Unblock' : 'Block'}
+                      </button>
+
+                      {u.role !== 'ADMIN' && (
+                        <button
+                          onClick={() => handleDeleteUser(u.id, u.name)}
+                          className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-xl transition"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

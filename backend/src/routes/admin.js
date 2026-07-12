@@ -76,6 +76,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res) => {
         name: true,
         role: true,
         walletBalance: true,
+        isBlocked: true,
         createdAt: true,
         workspaces: {
           include: {
@@ -108,12 +109,39 @@ router.put('/user-subscription', authenticate, requireAdmin, async (req, res) =>
   }
 
   try {
-    const userWorkspace = await prisma.teamMember.findFirst({
+    let userWorkspace = await prisma.teamMember.findFirst({
       where: { userId, role: 'OWNER' },
     });
 
     if (!userWorkspace) {
-      return res.status(404).json({ error: 'Primary workspace not found for this user' });
+      // Self-heal: Create a default workspace for this user
+      const userObj = await prisma.user.findUnique({ where: { id: userId } });
+      if (!userObj) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const workspaceName = `${userObj.name || 'User'}'s Workspace`;
+      const newWorkspace = await prisma.workspace.create({
+        data: {
+          name: workspaceName,
+          ownerId: userId,
+        },
+      });
+
+      userWorkspace = await prisma.teamMember.create({
+        data: {
+          userId,
+          workspaceId: newWorkspace.id,
+          role: 'OWNER',
+        },
+      });
+
+      await prisma.companyBranding.create({
+        data: {
+          workspaceId: newWorkspace.id,
+          companyName: workspaceName,
+        },
+      });
     }
 
     const plan = await prisma.plan.findUnique({ where: { name: planName } });
@@ -127,14 +155,14 @@ router.put('/user-subscription', authenticate, requireAdmin, async (req, res) =>
         planId: plan.id,
         status: 'ACTIVE',
         currentPeriodEnd: nextPeriod,
-        freeMessagesRemaining: plan.name === 'Free' ? 5 : plan.freeMessages,
+        freeMessagesRemaining: plan.name === 'Free' ? 5 : (plan.freeMessages || 0),
       },
       create: {
         workspaceId: userWorkspace.workspaceId,
         planId: plan.id,
         status: 'ACTIVE',
         currentPeriodEnd: nextPeriod,
-        freeMessagesRemaining: plan.name === 'Free' ? 5 : plan.freeMessages,
+        freeMessagesRemaining: plan.name === 'Free' ? 5 : (plan.freeMessages || 0),
       },
       include: { plan: true },
     });
@@ -362,6 +390,72 @@ router.post('/plans/seed', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to seed plans' });
+  }
+});
+
+// Toggle block status for user
+router.put('/users/:id/block', authenticate, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (targetUser.role === 'ADMIN' && req.user.id !== targetUser.id) {
+      return res.status(403).json({ error: 'Cannot block other administrator accounts' });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { isBlocked: !targetUser.isBlocked },
+    });
+
+    res.json({
+      success: true,
+      message: `User account successfully ${updatedUser.isBlocked ? 'blocked' : 'unblocked'}!`,
+      isBlocked: updatedUser.isBlocked
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update user block status' });
+  }
+});
+
+// Delete user account
+router.delete('/users/:id', authenticate, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (targetUser.role === 'ADMIN') {
+      return res.status(403).json({ error: 'Cannot delete administrator accounts' });
+    }
+
+    // 1. Find and delete all workspaces owned by this user
+    const ownedWorkspaces = await prisma.workspace.findMany({
+      where: { ownerId: id }
+    });
+
+    for (const ws of ownedWorkspaces) {
+      await prisma.workspace.delete({ where: { id: ws.id } });
+    }
+
+    // 2. Delete the user
+    await prisma.user.delete({ where: { id } });
+
+    res.json({
+      success: true,
+      message: 'User account and all owned workspaces/gateways successfully deleted!'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to delete user account' });
   }
 });
 
