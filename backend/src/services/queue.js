@@ -10,12 +10,24 @@ let campaignQueue = null;
 // Initialize Redis link safely
 if (process.env.REDIS_HOST || process.env.REDIS_URL) {
   try {
-    const redisConfig = process.env.REDIS_URL || {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-    };
-    redisClient = new ioredis(redisConfig);
+    const redisConfig = process.env.REDIS_URL
+      ? {
+          // BullMQ requires maxRetriesPerRequest: null
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+          ...(process.env.REDIS_URL && { lazyConnect: false }),
+        }
+      : {
+          host: process.env.REDIS_HOST || '127.0.0.1',
+          port: parseInt(process.env.REDIS_PORT) || 6379,
+          password: process.env.REDIS_PASSWORD || undefined,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+        };
+
+    redisClient = process.env.REDIS_URL
+      ? new ioredis(process.env.REDIS_URL, redisConfig)
+      : new ioredis(redisConfig);
     
     redisClient.on('connect', () => {
       console.log('[Queue] Connected to Redis. Initializing BullMQ.');
