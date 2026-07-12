@@ -1,0 +1,36 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Environment files (sensitive data)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.local
+**/.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+**/dist/
+
+# Baileys WhatsApp sessions storage
+backend/data/sessions/
+**/data/sessions/
+
+# Local database / sqlite
+*.db
+*.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db

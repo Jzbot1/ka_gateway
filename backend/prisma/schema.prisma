@@ -1,0 +1,274 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String          @id @default(uuid())
+  email              String          @unique
+  password           String
+  name               String
+  role               String          @default("USER") // ADMIN, USER, RESELLER
+  twoFactorSecret    String?
+  twoFactorEnabled   Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  workspaces         TeamMember[]
+  auditLogs          AuditLog[]
+  resellerSettings   ResellerSetting?
+  walletBalance      Float               @default(0.0)
+  walletTransactions WalletTransaction[]
+}
+
+model Workspace {
+  id                 String          @id @default(uuid())
+  name               String
+  ownerId            String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  branding           CompanyBranding?
+  teamMembers        TeamMember[]
+  gateways           Gateway[]
+  apiKeys            ApiKey[]
+  contacts           Contact[]
+  contactGroups      ContactGroup[]
+  messages           Message[]
+  campaigns          Campaign[]
+  templates          Template[]
+  webhooks           Webhook[]
+  subscription       Subscription?
+}
+
+model CompanyBranding {
+  id            String    @id @default(uuid())
+  workspaceId   String    @unique
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyName   String
+  logo          String?
+  color         String    @default("#3B82F6")
+  website       String?
+  email         String?
+  phone         String?
+  address       String?
+  footerText    String?
+  supportNumber String?
+  signature     String?
+  qrCode        String?
+}
+
+model TeamMember {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        String    @default("MEMBER") // OWNER, ADMIN, MANAGER, SUPPORT, DEVELOPER, BILLING
+
+  @@unique([userId, workspaceId])
+}
+
+model Gateway {
+  id           String    @id @default(uuid())
+  name         String
+  provider     String    @default("AUTO") // BAILEYS, META, AUTO
+  status       String    @default("DISCONNECTED") // CONNECTED, DISCONNECTED, EXPIRED, ERROR
+  credentials  String?   // JSON configuration for Meta Cloud API keys
+  sessionData  String?   // File path or backup location for Baileys auth session
+  phoneNumber  String?
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  messages     Message[]
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  type        String    @default("LIVE") // LIVE, TEST
+  ipWhitelist String?   // Comma separated IPs
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model ContactGroup {
+  id          String    @id @default(uuid())
+  name         String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts    Contact[]
+  createdAt   DateTime  @default(now())
+}
+
+model Contact {
+  id          String        @id @default(uuid())
+  name        String
+  phone       String
+  email       String?
+  tags        String?       // Comma separated tags
+  favorite    Boolean       @default(false)
+  groupId     String?
+  group       ContactGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+}
+
+model Template {
+  id          String    @id @default(uuid())
+  name        String
+  category    String    @default("MARKETING") // OTP, INVOICE, ORDER, PAYMENT, MARKETING, REMINDER
+  content     String    // Message text with variables like {{company}}, {{otp}}
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Message {
+  id           String     @id @default(uuid())
+  gatewayId    String?
+  gateway      Gateway?   @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  workspaceId  String
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sender       String?
+  receiver     String
+  type         String     @default("TEXT") // TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT, LOCATION, CONTACT, TEMPLATE, OTP, INVOICE
+  content      String
+  mediaUrl     String?
+  status       String     @default("SENT") // PENDING, SENT, DELIVERED, READ, FAILED
+  provider     String     @default("BAILEYS") // BAILEYS, META
+  campaignId   String?
+  campaign     Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  scheduledFor DateTime?
+  errorMessage String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Campaign {
+  id          String    @id @default(uuid())
+  name        String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  status      String    @default("PENDING") // PENDING, RUNNING, PAUSED, COMPLETED
+  totalCount  Int       @default(0)
+  sentCount   Int       @default(0)
+  failedCount Int       @default(0)
+  scheduledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  messages    Message[]
+}
+
+model Webhook {
+  id          String    @id @default(uuid())
+  url         String
+  events      String    // Comma separated event list: message.sent, message.delivered, etc.
+  secret      String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Plan {
+  id              String         @id @default(uuid())
+  name            String         @unique // Free, Starter, Business, Enterprise
+  price           Float
+  billingPeriod   String         @default("MONTHLY") // MONTHLY, YEARLY
+  description     String?
+  features        String?        // Comma-separated features
+  badge           String?        // Popular, Recommended, New
+  displayOrder    Int            @default(0)
+  isActive        Boolean        @default(true)
+  rateLimit       Int            @default(60) // requests per minute
+  storageLimit    Float          @default(100.0) // MB
+  freeMessages    Int            @default(0) // Monthly free messages
+  gatewayLimit    Int            @default(1)
+  apiLimit        Int            @default(1000) // API requests per month
+  messagesLimit   Int            @default(5000) // Total messages per month
+  teamLimit       Int            @default(2)
+  webhooksLimit   Int            @default(1)
+  brandingEnabled Boolean        @default(false)
+  priorityQueue   Boolean        @default(false)
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id                     String    @id @default(uuid())
+  planId                 String
+  plan                   Plan      @relation(fields: [planId], references: [id])
+  workspaceId            String    @unique
+  workspace              Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  status                 String    @default("ACTIVE") // ACTIVE, CANCELED, EXPIRED
+  currentPeriodEnd       DateTime
+  autoRenew              Boolean   @default(true)
+  freeMessagesRemaining  Int       @default(5)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   String
+  createdAt DateTime @default(now())
+}
+
+model ResellerSetting {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domain       String   @unique
+  logo         String?
+  colors       String?  // JSON customization colors
+  brandingName String
+  emailConfig  String?  // JSON SMTP config
+  stripeKey    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Payment {
+  id          String   @id @default(uuid())
+  orderId     String   @unique
+  amount      Float
+  status      String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  utr         String?  @unique
+  planName    String
+  workspaceId String
+  paymentUrl  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float
+  type        String   // RECHARGE, DEDUCTION
+  description String
+  createdAt   DateTime @default(now())
+}
+
+model PricingRule {
+  id          String   @id @default(uuid())
+  provider    String   // BAILEYS, META
+  messageType String   // TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT, OTP, INVOICE, TEMPLATE
+  price       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, messageType])
+}
