@@ -84,22 +84,44 @@ function addMemoryJob(id, data, retries, handler) {
 }
 
 // BullMQ placeholder initialization if Redis is connected
+function makeBullConnection() {
+  // BullMQ Workers need a dedicated connection with maxRetriesPerRequest: null
+  const opts = {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  };
+  if (process.env.REDIS_URL) {
+    return new ioredis(process.env.REDIS_URL, opts);
+  }
+  return new ioredis({
+    host: process.env.REDIS_HOST || '127.0.0.1',
+    port: parseInt(process.env.REDIS_PORT) || 6379,
+    password: process.env.REDIS_PASSWORD || undefined,
+    ...opts,
+  });
+}
+
 function initBullMQ() {
-  const { Queue, Worker } = require('bullmq');
-  
-  const connection = redisClient;
+  try {
+    const { Queue, Worker } = require('bullmq');
 
-  messageQueue = new Queue('message-queue', { connection });
-  campaignQueue = new Queue('campaign-queue', { connection });
+    messageQueue = new Queue('message-queue', { connection: makeBullConnection() });
+    campaignQueue = new Queue('campaign-queue', { connection: makeBullConnection() });
 
-  // Initialize workers
-  new Worker('message-queue', async (job) => {
-    await processMessageJob(job.data);
-  }, { connection });
+    // Initialize workers with dedicated connections
+    new Worker('message-queue', async (job) => {
+      await processMessageJob(job.data);
+    }, { connection: makeBullConnection() });
 
-  new Worker('campaign-queue', async (job) => {
-    await processCampaignJob(job.data);
-  }, { connection });
+    new Worker('campaign-queue', async (job) => {
+      await processCampaignJob(job.data);
+    }, { connection: makeBullConnection() });
+
+    console.log('[Queue] BullMQ Queues and Workers initialized successfully.');
+  } catch (e) {
+    console.error('[Queue] BullMQ initialization failed, falling back to in-memory queue:', e.message);
+    useRedis = false;
+  }
 }
 
 // Concrete Job Processing Handlers
